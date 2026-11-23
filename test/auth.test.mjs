@@ -6,7 +6,7 @@ function fakeFetch(responses) {
   const calls = [];
   const impl = async (url, init) => {
     calls.push({ url, init });
-    const r = responses.shift() ?? responses.at(-1);
+    const r = responses[Math.min(calls.length - 1, responses.length - 1)];
     return {
       ok: r.status >= 200 && r.status < 300,
       status: r.status ?? 200,
