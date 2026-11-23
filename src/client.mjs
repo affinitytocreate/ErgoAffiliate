@@ -1,0 +1,109 @@
+// Creators API GetItems client: batches of 10, one request per second,
+// bounded retries on throttling, partial failures reported per ASIN.
+import { normalizeItem } from './normalize.mjs';
+
+export const GET_ITEMS_URL = 'https://creatorsapi.amazon/catalog/v1/getItems';
+export const BATCH_SIZE = 10;
+export const MIN_GAP_MS = 1000;
+export const RESOURCES = [
+  'itemInfo.title',
+  'images.primary.large',
+  'offersV2.listings.price',
+  'offersV2.listings.availability',
+];
+
+const MAX_THROTTLE_RETRIES = 3;
+const DEFAULT_RETRY_MS = 2000;
+
+export function createClient({
+  tokenProvider,
+  partnerTag,
+  marketplace = 'www.amazon.com',
+  fetchImpl = fetch,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now = Date.now,
+}) {
+  let lastRequestAt = null;
+
+  async function waitForGap() {
+    if (lastRequestAt === null) return;
+    const wait = MIN_GAP_MS - (now() - lastRequestAt);
+    if (wait > 0) await sleep(wait);
+  }
+
+  async function post(batch) {
+    await waitForGap();
+    lastRequestAt = now();
+    const res = await fetchImpl(GET_ITEMS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await tokenProvider.getToken()}`,
+        'Content-Type': 'application/json',
+        'x-marketplace': marketplace,
+      },
+      body: JSON.stringify({ itemIds: batch, partnerTag, resources: RESOURCES }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { body = null; }
+    return { status: res.status, ok: res.ok, body: body ?? {} };
+  }
+
+  // Returns { items, errors, failed } for one batch of up to 10 ASINs.
+  async function runBatch(batch, fetchedAt) {
+    let tokenRetried = false;
+    let throttleRetries = 0;
+    for (;;) {
+      const r = await post(batch);
+      if (r.ok) {
+        const items = new Map();
+        const errors = new Map();
+        let failed = false;
+        for (const raw of r.body.itemResults?.items ?? []) {
+          items.set(raw.asin, normalizeItem(raw, fetchedAt));
+        }
+        for (const e of r.body.errors ?? []) {
+          const m = /ItemId\s+([A-Z0-9]{10})/.exec(e.message ?? '');
+          if (m) errors.set(m[1], { code: e.code, message: e.message });
+          else failed = true;
+        }
+        return { items, errors, failed };
+      }
+      if (r.status === 404) {
+        const errors = new Map(batch.map((asin) => [asin, { code: 'ResourceNotFoundException', message: r.body.message ?? 'No items found' }]));
+        return { items: new Map(), errors, failed: false };
+      }
+      if (r.status === 401) {
+        if (tokenRetried) throw new Error(`Creators API rejected the token (401 ${r.body.reason ?? ''})`.trim());
+        tokenRetried = true;
+        tokenProvider.invalidate();
+        continue;
+      }
+      if (r.status === 403) {
+        throw new Error(`Creators API access denied (403 ${r.body.reason ?? r.body.type ?? ''})`.trim());
+      }
+      if (r.status === 429 && throttleRetries < MAX_THROTTLE_RETRIES) {
+        throttleRetries += 1;
+        await sleep(r.body.retryAfterSeconds ? r.body.retryAfterSeconds * 1000 : DEFAULT_RETRY_MS);
+        continue;
+      }
+      return { items: new Map(), errors: new Map(), failed: true };
+    }
+  }
+
+  return {
+    async getItems(asins) {
+      const unique = [...new Set(asins.map((a) => String(a).trim().toUpperCase()).filter(Boolean))];
+      const items = new Map();
+      const errors = new Map();
+      let failedBatches = 0;
+      const fetchedAt = new Date(now()).toISOString();
+      for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+        const result = await runBatch(unique.slice(i, i + BATCH_SIZE), fetchedAt);
+        for (const [k, v] of result.items) items.set(k, v);
+        for (const [k, v] of result.errors) errors.set(k, v);
+        if (result.failed) failedBatches += 1;
+      }
+      return { items, errors, failedBatches };
+    },
+  };
+}
