@@ -47,6 +47,7 @@ try {
       version: process.env.AMAZON_CREATORS_VERSION,
     }),
     partnerTag: config.partnerTag,
+    fallbackPartnerTag: config.fallbackPartnerTag,
   });
 
   const previous = readLiveFile(config.out);
@@ -60,6 +61,12 @@ try {
     `${config.site}: requested ${summary.requested}, fetched ${summary.fetched}, carried over ${summary.carriedOver}, ` +
       `not accessible ${summary.notAccessible.length}, failed batches ${summary.failedBatches}`,
   );
+  if (summary.usedFallbackTag) {
+    console.warn(`WARNING: the tracking ID ${config.partnerTag} was rejected; used the default tag ${config.fallbackPartnerTag} for this run.`);
+  }
+  if (summary.failedBatches > 0) {
+    console.warn(`WARNING: ${summary.failedBatches} batch(es) failed; those desks will show "Check price on Amazon".`);
+  }
 } catch (err) {
   fail(`Sync failed: ${err.message}`);
 }

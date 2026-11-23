@@ -26,6 +26,14 @@ test('a normal run records every fetched item', async () => {
   assert.equal(liveFile.fetchedAt, new Date(NOW).toISOString());
 });
 
+test('the summary reports when the client fell back to the default tag', async () => {
+  const client = { getItems: async () => ({ items: new Map([['A', live('A', 0)]]), errors: new Map(), failedBatches: 0, usedFallbackTag: true }) };
+  const { summary } = await syncSite({ asins: ['A'], client, previous: null, now: NOW });
+  assert.equal(summary.usedFallbackTag, true);
+  const plain = await syncSite({ asins: ['A'], client: stubClient({ items: [live('A', 0)] }), previous: null, now: NOW });
+  assert.equal(plain.summary.usedFallbackTag, false);
+});
+
 test('a missed item is carried over from a 6 hour old previous run unchanged', async () => {
   const previous = { fetchedAt: iso(6 * H), items: { C: live('C', 6 * H) }, errors: {} };
   const client = stubClient({ items: [live('A', 0), live('B', 0)] });

@@ -12,18 +12,35 @@ export const RESOURCES = [
   'offersV2.listings.availability',
 ];
 
-const MAX_THROTTLE_RETRIES = 3;
-const DEFAULT_RETRY_MS = 2000;
+const MAX_THROTTLE_RETRIES = 5;
+const BASE_RETRY_MS = 2000;
+const MAX_RETRY_MS = 30000;
+const JITTER_MS = 1000;
+// Reasons Amazon gives when the tracking ID (partner tag) itself is rejected.
+const BAD_TAG_REASONS = new Set(['InvalidPartnerTag', 'InvalidAssociate']);
+
+// How long to wait before retrying a throttled request: Amazon's hint when it gives one,
+// else exponential backoff, plus jitter so sites that collide do not retry in step. Capped.
+function throttleWait(res, body, attempt, random) {
+  const header = Number(res.headers?.get?.('retry-after'));
+  const hintSeconds = Number.isFinite(header) && header > 0 ? header : body.retryAfterSeconds;
+  const base = hintSeconds ? hintSeconds * 1000 : BASE_RETRY_MS * 2 ** (attempt - 1);
+  return Math.min(MAX_RETRY_MS, base + Math.floor(random() * JITTER_MS));
+}
 
 export function createClient({
   tokenProvider,
   partnerTag,
+  fallbackPartnerTag = null,
   marketplace = 'www.amazon.com',
   fetchImpl = fetch,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = Date.now,
+  random = Math.random,
 }) {
   let lastRequestAt = null;
+  let tag = partnerTag;
+  let usedFallbackTag = false;
 
   async function waitForGap() {
     if (lastRequestAt === null) return;
@@ -41,11 +58,11 @@ export function createClient({
         'Content-Type': 'application/json',
         'x-marketplace': marketplace,
       },
-      body: JSON.stringify({ itemIds: batch, partnerTag, resources: RESOURCES }),
+      body: JSON.stringify({ itemIds: batch, partnerTag: tag, resources: RESOURCES }),
     });
     let body = null;
     try { body = await res.json(); } catch { body = null; }
-    return { status: res.status, ok: res.ok, body: body ?? {} };
+    return { status: res.status, ok: res.ok, body: body ?? {}, res };
   }
 
   // Returns { items, errors, failed } for one batch of up to 10 ASINs.
@@ -83,9 +100,15 @@ export function createClient({
       if (r.status === 403) {
         throw new Error(`Creators API access denied (403 ${r.body.reason ?? r.body.type ?? ''})`.trim());
       }
+      if (r.status === 400 && BAD_TAG_REASONS.has(r.body.reason) && fallbackPartnerTag && tag !== fallbackPartnerTag) {
+        // The site's own tracking ID was rejected: carry on with the default tag.
+        tag = fallbackPartnerTag;
+        usedFallbackTag = true;
+        continue;
+      }
       if (r.status === 429 && throttleRetries < MAX_THROTTLE_RETRIES) {
         throttleRetries += 1;
-        await sleep(r.body.retryAfterSeconds ? r.body.retryAfterSeconds * 1000 : DEFAULT_RETRY_MS);
+        await sleep(throttleWait(r.res, r.body, throttleRetries, random));
         continue;
       }
       return { items: new Map(), errors: new Map(), failed: true };
@@ -105,7 +128,7 @@ export function createClient({
         for (const [k, v] of result.errors) errors.set(k, v);
         if (result.failed) failedBatches += 1;
       }
-      return { items, errors, failedBatches };
+      return { items, errors, failedBatches, usedFallbackTag };
     },
   };
 }

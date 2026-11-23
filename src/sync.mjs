@@ -46,6 +46,7 @@ export async function syncSite({ asins, client, previous, now }) {
       notAccessible: Object.keys(errors),
       failedBatches: result.failedBatches,
       carriedOver,
+      usedFallbackTag: Boolean(result.usedFallbackTag),
     },
   };
 }

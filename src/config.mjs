@@ -16,6 +16,7 @@ export function loadConfig(configPath) {
   return {
     site: raw.site,
     partnerTag: raw.partnerTag,
+    fallbackPartnerTag: typeof raw.fallbackPartnerTag === 'string' && raw.fallbackPartnerTag !== '' ? raw.fallbackPartnerTag : null,
     asinsFile: resolve(base, raw.asinsFile),
     asinsPath: typeof raw.asinsPath === 'string' ? raw.asinsPath : '',
     asinField: raw.asinField,

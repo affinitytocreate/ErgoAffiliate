@@ -5,7 +5,7 @@ import { createClient, GET_ITEMS_URL, BATCH_SIZE, MIN_GAP_MS, RESOURCES } from '
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/get-items-response.json', import.meta.url), 'utf8'));
 
-function harness(script) {
+function harness(script, opts = {}) {
   const calls = [];
   const sleeps = [];
   let t = 1_700_000_000_000;
@@ -13,7 +13,8 @@ function harness(script) {
   const fetchImpl = async (url, init) => {
     calls.push({ url, init, body: JSON.parse(init.body) });
     const r = typeof script === 'function' ? script(calls.length, JSON.parse(init.body)) : script[Math.min(calls.length - 1, script.length - 1)];
-    return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
+    const headers = { get: (k) => r.headers?.[k.toLowerCase()] ?? null };
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, headers, json: async () => r.body };
   };
   const client = createClient({
     tokenProvider: { getToken: async () => 'tok', invalidate: () => { invalidations += 1; } },
@@ -21,6 +22,8 @@ function harness(script) {
     fetchImpl,
     sleep: async (ms) => { sleeps.push(ms); t += ms; },
     now: () => t,
+    random: () => 0,
+    ...opts,
   });
   return { client, calls, sleeps, invalidations: () => invalidations };
 }
@@ -104,12 +107,64 @@ test('a 429 without retryAfterSeconds waits 2000 ms', async () => {
   assert.ok(h.sleeps.includes(2000));
 });
 
-test('repeated 429s stop after 3 retries and count a failed batch without throwing', async () => {
+test('repeated 429s back off exponentially, stop after 5 retries and count a failed batch without throwing', async () => {
   const h = harness([{ status: 429, body: { type: 'ThrottleException' } }]);
   const out = await h.client.getItems(['B0AAAAAAA1']);
-  assert.equal(h.calls.length, 4);
+  assert.equal(h.calls.length, 6);
+  assert.deepEqual(h.sleeps, [2000, 4000, 8000, 16000, 30000]);
   assert.equal(out.failedBatches, 1);
   assert.equal(out.items.size, 0);
+});
+
+test('a Retry-After header is honored', async () => {
+  const h = harness((n, body) => (n === 1 ? { status: 429, headers: { 'retry-after': '7' }, body: { type: 'ThrottleException' } } : okFor(body)));
+  await h.client.getItems(['B0AAAAAAA1']);
+  assert.ok(h.sleeps.includes(7000));
+});
+
+test('a very long retry hint is capped at 30 seconds', async () => {
+  const h = harness((n, body) => (n === 1 ? { status: 429, body: { type: 'ThrottleException', retryAfterSeconds: 3600 } } : okFor(body)));
+  await h.client.getItems(['B0AAAAAAA1']);
+  assert.ok(h.sleeps.includes(30000));
+  assert.ok(!h.sleeps.some((s) => s > 30000));
+});
+
+test('jitter is added to the backoff so two sites do not retry in step', async () => {
+  const h = harness((n, body) => (n === 1 ? { status: 429, body: { type: 'ThrottleException' } } : okFor(body)), { random: () => 0.5 });
+  await h.client.getItems(['B0AAAAAAA1']);
+  assert.ok(h.sleeps.includes(2500));
+});
+
+test('an invalid tracking ID falls back to the default tag and keeps using it', async () => {
+  const bad = { status: 400, body: { type: 'ValidationException', reason: 'InvalidPartnerTag', message: 'bad tag' } };
+  const h = harness((n, body) => (n === 1 ? bad : okFor(body)), { partnerTag: 'ergodesk-20', fallbackPartnerTag: 'nybshop09-20' });
+  const out = await h.client.getItems(asins(15));
+  assert.equal(h.calls[0].body.partnerTag, 'ergodesk-20');
+  assert.equal(h.calls[1].body.partnerTag, 'nybshop09-20');
+  assert.equal(h.calls[2].body.partnerTag, 'nybshop09-20');
+  assert.equal(out.usedFallbackTag, true);
+  assert.equal(out.items.size, 15);
+});
+
+test('InvalidAssociate also triggers the tag fallback', async () => {
+  const bad = { status: 400, body: { type: 'ValidationException', reason: 'InvalidAssociate', message: 'bad associate' } };
+  const h = harness((n, body) => (n === 1 ? bad : okFor(body)), { partnerTag: 'ergodesk-20', fallbackPartnerTag: 'nybshop09-20' });
+  const out = await h.client.getItems(['B0AAAAAAA1']);
+  assert.equal(out.usedFallbackTag, true);
+});
+
+test('without a fallback tag an invalid tracking ID is a failed batch, not a crash', async () => {
+  const bad = { status: 400, body: { type: 'ValidationException', reason: 'InvalidPartnerTag', message: 'bad tag' } };
+  const h = harness([bad]);
+  const out = await h.client.getItems(['B0AAAAAAA1']);
+  assert.equal(out.failedBatches, 1);
+  assert.equal(out.usedFallbackTag, false);
+});
+
+test('usedFallbackTag is false in a normal run', async () => {
+  const h = harness((_, body) => okFor(body), { fallbackPartnerTag: 'nybshop09-20' });
+  const out = await h.client.getItems(['B0AAAAAAA1']);
+  assert.equal(out.usedFallbackTag, false);
 });
 
 test('a 401 TokenExpired invalidates the token and retries once', async () => {

@@ -1,0 +1,52 @@
+name: Refresh site prices
+
+# One schedule for every Ergo site. Each site's Vercel build syncs its own prices from the
+# Amazon Creators API when it starts. Amazon limits the whole account to about one request
+# per second, so this workflow triggers the sites one at a time, five minutes apart, which
+# keeps their syncs from overlapping. It runs twice a day, so prices are never much older
+# than 12 hours.
+#
+# Setup (owner), one per site that is ready: create a Vercel Deploy Hook for the production
+# branch and save its URL as a repository secret in THIS repo:
+#   DEPLOY_HOOK_ERGODESK, DEPLOY_HOOK_ERGOCHAIRS, DEPLOY_HOOK_ERGOTREAD, DEPLOY_HOOK_ERGOPLAY
+# A site with no secret set is skipped.
+
+on:
+  schedule:
+    - cron: '17 7,19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-sites
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DEPLOY_HOOK_ERGODESK: ${{ secrets.DEPLOY_HOOK_ERGODESK }}
+      DEPLOY_HOOK_ERGOCHAIRS: ${{ secrets.DEPLOY_HOOK_ERGOCHAIRS }}
+      DEPLOY_HOOK_ERGOTREAD: ${{ secrets.DEPLOY_HOOK_ERGOTREAD }}
+      DEPLOY_HOOK_ERGOPLAY: ${{ secrets.DEPLOY_HOOK_ERGOPLAY }}
+    steps:
+      - name: Trigger each site, five minutes apart
+        run: |
+          failed=0
+          first=1
+          for site in ERGODESK ERGOCHAIRS ERGOTREAD ERGOPLAY; do
+            hook_var="DEPLOY_HOOK_${site}"
+            hook="${!hook_var}"
+            if [ -z "$hook" ]; then
+              echo "Skipping $site (no deploy hook secret set)"
+              continue
+            fi
+            if [ "$first" -eq 0 ]; then sleep 300; fi
+            first=0
+            echo "Triggering $site"
+            if ! curl --fail --silent --show-error -X POST "$hook" > /dev/null; then
+              echo "::error::Deploy hook for $site failed"
+              failed=1
+            fi
+          done
+          exit $failed

@@ -25,6 +25,14 @@ test('loadConfig rejects a missing partnerTag and names the field', () => {
   assert.throws(() => loadConfig(p), /partnerTag/);
 });
 
+test('fallbackPartnerTag is optional and null when absent', () => {
+  assert.equal(loadConfig(fixtureConfig).fallbackPartnerTag, null);
+  const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
+  const p = join(dir, 'site.config.json');
+  writeFileSync(p, JSON.stringify({ site: 's', partnerTag: 'site-20', fallbackPartnerTag: 'default-20', asinsFile: 'a.json', asinField: 'asin', out: 'o.json', reportOut: 'r.md' }));
+  assert.equal(loadConfig(p).fallbackPartnerTag, 'default-20');
+});
+
 test('readAsins reads a top-level array by asinField', () => {
   assert.deepEqual(readAsins(loadConfig(fixtureConfig)), ['B0AAAAAAA1', 'B0BBBBBBB2']);
 });
