@@ -1,0 +1,37 @@
+{
+  "itemResults": {
+    "items": [
+      {
+        "asin": "B0AAAAAAA1",
+        "detailPageURL": "https://www.amazon.com/dp/B0AAAAAAA1?tag=nybshop09-20",
+        "itemInfo": { "title": { "displayValue": "Full Offer Standing Desk 60x30" } },
+        "images": { "primary": { "large": { "url": "https://m.media-amazon.com/images/I/aaa._AC_SL1500_.jpg", "width": 1500, "height": 1500 } } },
+        "offersV2": {
+          "listings": [
+            {
+              "price": {
+                "money": { "amount": 249.99, "currency": "USD", "displayAmount": "$249.99" },
+                "savingBasis": { "money": { "amount": 329.99, "currency": "USD", "displayAmount": "$329.99" } },
+                "savings": { "percentage": 24 }
+              },
+              "availability": { "type": "IN_STOCK" }
+            }
+          ]
+        }
+      },
+      {
+        "asin": "B0BBBBBBB2",
+        "detailPageURL": "https://www.amazon.com/dp/B0BBBBBBB2?tag=nybshop09-20",
+        "itemInfo": { "title": { "displayValue": "Empty Listings Desk" } },
+        "offersV2": { "listings": [] }
+      },
+      {
+        "asin": "B0CCCCCCC3",
+        "itemInfo": { "title": { "displayValue": "No Offers Key Desk" } }
+      }
+    ]
+  },
+  "errors": [
+    { "code": "ItemNotAccessible", "message": "The ItemId B01180YUXS is not accessible through the Creators API." }
+  ]
+}
