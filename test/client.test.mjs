@@ -26,7 +26,7 @@ function harness(script) {
 }
 
 const asins = (n) => Array.from({ length: n }, (_, i) => `B0${String(i).padStart(8, '0')}`);
-const okFor = (body) => ({ status: 200, body: { itemResults: { items: body.itemIds.map((asin) => ({ asin, itemInfo: { title: { displayValue: asin } } })) } } });
+const okFor = (body) => ({ status: 200, body: { itemsResult: { items: body.itemIds.map((asin) => ({ asin, itemInfo: { title: { displayValue: asin } } })) } } });
 
 test('25 ASINs make 3 requests of 10, 10 and 5 with the right shape', async () => {
   const h = harness((_, body) => okFor(body));
@@ -40,6 +40,12 @@ test('25 ASINs make 3 requests of 10, 10 and 5 with the right shape', async () =
   assert.deepEqual(h.calls[0].body.resources, RESOURCES);
   assert.equal(out.items.size, 25);
   assert.equal(BATCH_SIZE, 10);
+});
+
+test('the documented itemResults key is still read if Amazon ever returns it', async () => {
+  const h = harness([{ status: 200, body: { itemResults: { items: [{ asin: 'B0AAAAAAA1', itemInfo: { title: { displayValue: 'x' } } }] } } }]);
+  const out = await h.client.getItems(['B0AAAAAAA1']);
+  assert.equal(out.items.size, 1);
 });
 
 test('0 ASINs make no request', async () => {

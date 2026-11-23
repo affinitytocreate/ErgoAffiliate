@@ -58,7 +58,8 @@ export function createClient({
         const items = new Map();
         const errors = new Map();
         let failed = false;
-        for (const raw of r.body.itemResults?.items ?? []) {
+        // Amazon's live responses use "itemsResult"; its docs say "itemResults". Read either.
+        for (const raw of r.body.itemsResult?.items ?? r.body.itemResults?.items ?? []) {
           items.set(raw.asin, normalizeItem(raw, fetchedAt));
         }
         for (const e of r.body.errors ?? []) {

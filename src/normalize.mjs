@@ -6,7 +6,9 @@ function num(value) {
 }
 
 export function normalizeItem(raw, fetchedAt) {
-  const listing = raw.offersV2?.listings?.[0] ?? null;
+  // An item can have several listings; the buy box winner is the offer shoppers actually get.
+  const listings = raw.offersV2?.listings ?? [];
+  const listing = listings.find((l) => l.isBuyBoxWinner) ?? listings[0] ?? null;
   const price = listing?.price ?? null;
   const usd = price?.money?.currency === 'USD';
   const savingBasisUsd = price?.savingBasis?.money?.currency === 'USD';

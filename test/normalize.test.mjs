@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { normalizeItem } from '../src/normalize.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/get-items-response.json', import.meta.url), 'utf8'));
-const [full, emptyListings, noOffers] = fixture.itemResults.items;
+const [full, emptyListings, noOffers] = fixture.itemsResult.items;
 const AT = '2026-11-23T20:00:00.000Z';
 
 test('full offer maps price, list price, savings and stock', () => {
@@ -39,6 +39,25 @@ test('missing listings key behaves the same and never yields NaN', () => {
   for (const key of ['priceUSD', 'listPriceUSD', 'savingsPercent']) {
     assert.ok(!Number.isNaN(item[key]));
   }
+});
+
+test('the buy box winning listing is used, not just the first listing', () => {
+  const raw = structuredClone(full);
+  const winner = raw.offersV2.listings[0];
+  raw.offersV2.listings = [
+    { isBuyBoxWinner: false, price: { money: { amount: 699.99, currency: 'USD' } }, availability: { type: 'IN_STOCK' } },
+    { ...winner, isBuyBoxWinner: true },
+  ];
+  assert.equal(normalizeItem(raw, AT).priceUSD, 249.99);
+});
+
+test('without a buy box winner the first listing is used', () => {
+  const raw = structuredClone(full);
+  raw.offersV2.listings = [
+    { isBuyBoxWinner: false, price: { money: { amount: 88.5, currency: 'USD' } }, availability: { type: 'IN_STOCK' } },
+    { isBuyBoxWinner: false, price: { money: { amount: 99, currency: 'USD' } }, availability: { type: 'IN_STOCK' } },
+  ];
+  assert.equal(normalizeItem(raw, AT).priceUSD, 88.5);
 });
 
 test('a non-USD price is not shown as dollars', () => {
