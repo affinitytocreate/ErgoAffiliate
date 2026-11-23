@@ -1,0 +1,8 @@
+{
+  "site": "fixture",
+  "partnerTag": "nybshop09-20",
+  "asinsFile": "desks.json",
+  "asinField": "asin",
+  "out": "out/amazon-live.json",
+  "reportOut": "out/amazon-report.md"
+}
