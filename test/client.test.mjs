@@ -61,6 +61,14 @@ test('duplicates and lowercase ASINs are uppercased and de-duplicated', async ()
   assert.deepEqual(h.calls[0].body.itemIds, ['B0AAAAAAA1', 'B0BBBBBBB2']);
 });
 
+test('an invalid ASIN error (plural ItemIds wording) is recorded by ASIN, not as a failed batch', async () => {
+  const body = { errors: [{ code: 'InvalidParameterValue', message: 'The ItemIds B0DYJ4X7GC provided in the request is invalid.' }], itemsResult: { items: [] } };
+  const h = harness([{ status: 200, body }]);
+  const out = await h.client.getItems(['B0DYJ4X7GC']);
+  assert.equal(out.errors.get('B0DYJ4X7GC').code, 'InvalidParameterValue');
+  assert.equal(out.failedBatches, 0);
+});
+
 test('at least one second passes between requests', async () => {
   const h = harness((_, body) => okFor(body));
   await h.client.getItems(asins(25));

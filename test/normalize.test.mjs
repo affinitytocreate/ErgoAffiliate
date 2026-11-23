@@ -60,6 +60,26 @@ test('without a buy box winner the first listing is used', () => {
   assert.equal(normalizeItem(raw, AT).priceUSD, 88.5);
 });
 
+test('scarce stock and short lead times are orderable, with Amazon wording kept', () => {
+  const scarce = structuredClone(full);
+  scarce.offersV2.listings[0].availability = { type: 'IN_STOCK_SCARCE', message: 'Only 20 left in stock - order soon.' };
+  const a = normalizeItem(scarce, AT);
+  assert.equal(a.inStock, true);
+  assert.equal(a.availability, 'IN_STOCK_SCARCE');
+  assert.equal(a.availabilityMessage, 'Only 20 left in stock - order soon.');
+
+  const lead = structuredClone(full);
+  lead.offersV2.listings[0].availability = { type: 'LEADTIME', message: 'Usually ships within 7 to 8 days' };
+  const b = normalizeItem(lead, AT);
+  assert.equal(b.inStock, false);
+  assert.equal(b.availabilityMessage, 'Usually ships within 7 to 8 days');
+  assert.equal(b.priceUSD, 249.99);
+});
+
+test('availabilityMessage is null when Amazon gives none', () => {
+  assert.equal(normalizeItem(noOffers, AT).availabilityMessage, null);
+});
+
 test('a non-USD price is not shown as dollars', () => {
   const raw = structuredClone(full);
   raw.offersV2.listings[0].price.money.currency = 'CAD';

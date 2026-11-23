@@ -63,7 +63,8 @@ export function createClient({
           items.set(raw.asin, normalizeItem(raw, fetchedAt));
         }
         for (const e of r.body.errors ?? []) {
-          const m = /ItemId\s+([A-Z0-9]{10})/.exec(e.message ?? '');
+          // Amazon words these "The ItemId X is not accessible..." and "The ItemIds X provided ... is invalid."
+          const m = /ItemIds?\s+([A-Z0-9]{10})/.exec(e.message ?? '');
           if (m) errors.set(m[1], { code: e.code, message: e.message });
           else failed = true;
         }
