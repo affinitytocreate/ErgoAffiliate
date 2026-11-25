@@ -8,7 +8,7 @@ name: Refresh site prices
 #
 # Setup (owner), one per site that is ready: create a Vercel Deploy Hook for the production
 # branch and save its URL as a repository secret in THIS repo:
-#   DEPLOY_HOOK_ERGODESK, DEPLOY_HOOK_ERGOCHAIRS, DEPLOY_HOOK_ERGOTREAD, DEPLOY_HOOK_ERGOPLAY
+#   DEPLOY_HOOK_ERGODESK, DEPLOY_HOOK_ERGOCHAIRS, DEPLOY_HOOK_ERGOTREAD, DEPLOY_HOOK_ERGOPLAY, DEPLOY_HOOK_ERGOMOUNT
 # A site with no secret set is skipped.
 
 on:
@@ -29,12 +29,13 @@ jobs:
       DEPLOY_HOOK_ERGOCHAIRS: ${{ secrets.DEPLOY_HOOK_ERGOCHAIRS }}
       DEPLOY_HOOK_ERGOTREAD: ${{ secrets.DEPLOY_HOOK_ERGOTREAD }}
       DEPLOY_HOOK_ERGOPLAY: ${{ secrets.DEPLOY_HOOK_ERGOPLAY }}
+      DEPLOY_HOOK_ERGOMOUNT: ${{ secrets.DEPLOY_HOOK_ERGOMOUNT }}
     steps:
       - name: Trigger each site, five minutes apart
         run: |
           failed=0
           first=1
-          for site in ERGODESK ERGOCHAIRS ERGOTREAD ERGOPLAY; do
+          for site in ERGODESK ERGOCHAIRS ERGOTREAD ERGOPLAY ERGOMOUNT; do
             hook_var="DEPLOY_HOOK_${site}"
             hook="${!hook_var}"
             if [ -z "$hook" ]; then
