@@ -7,7 +7,7 @@ Each site installs this package from a version tag, keeps a small `affiliate.con
 ## Use in a site
 
 ```
-npm install github:affinitytocreate/ErgoAffiliate#v0.2.0
+npm install github:affinitytocreate/ErgoAffiliate#v0.3.0
 ```
 
 `affiliate.config.json` in the site root:
@@ -29,6 +29,13 @@ Run the sync with `node node_modules/ergo-affiliate/bin/sync.mjs affiliate.confi
 ## Credentials
 
 Only from the environment: `AMAZON_CREATORS_CREDENTIAL_ID`, `AMAZON_CREATORS_SECRET`, `AMAZON_CREATORS_VERSION` (US is `3.1`). Keep them in a git-ignored `.env` locally and in each site's Vercel environment variables. They are never committed.
+
+## When there is no fresh Amazon data
+
+The price slot says "Check price on Amazon" with the time of the last successful Amazon update, or no date if none is on record. No old price is shown, and a photo that cannot be shown becomes a spec card of the same size.
+
+- Builds keep no Amazon data. `resolveLastSuccess` takes the newest time from this build's sync or from the status file the live site already publishes (`/amazon-status.json`, holding only `lastSuccessAt`). The site writes the result into its new build.
+- `ergo-affiliate/expire` runs in the browser and applies the same fallback once data on an open or old page passes 24 hours. The markup contract is at the top of `src/expire.mjs`.
 
 ## Rate limits across sites
 

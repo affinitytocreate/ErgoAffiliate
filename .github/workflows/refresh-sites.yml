@@ -2,14 +2,19 @@ name: Refresh site prices
 
 # One schedule for every Ergo site. Each site's Vercel build syncs its own prices from the
 # Amazon Creators API when it starts. Amazon limits the whole account to about one request
-# per second, so this workflow triggers the sites one at a time, five minutes apart, which
+# per second, so this workflow triggers the sites one at a time, four minutes apart, which
 # keeps their syncs from overlapping. It runs twice a day, so prices are never much older
 # than 12 hours.
 #
+# A run only proves that Vercel accepted each hook. It does not prove that the build or its
+# Amazon sync worked: check the live site for that.
+#
 # Setup (owner), one per site that is ready: create a Vercel Deploy Hook for the production
-# branch and save its URL as a repository secret in THIS repo:
-#   DEPLOY_HOOK_ERGODESK, DEPLOY_HOOK_ERGOCHAIRS, DEPLOY_HOOK_ERGOTREAD, DEPLOY_HOOK_ERGOPLAY, DEPLOY_HOOK_ERGOMOUNT
-# A site with no secret set is skipped.
+# branch and save its URL, and nothing else, as a repository secret in THIS repo:
+#   DEPLOY_HOOK_ERGODESK, DEPLOY_HOOK_ERGOCHAIRS, DEPLOY_HOOK_ERGOTREAD, DEPLOY_HOOK_ERGOPLAY,
+#   DEPLOY_HOOK_ERGOMOUNT, DEPLOY_HOOK_ERGOCYCLE, DEPLOY_HOOK_ERGOBENCH, DEPLOY_HOOK_ERGORECLINE,
+#   DEPLOY_HOOK_ERGOCLICK
+# A site with no secret set is skipped. The run page lists every skipped site as a warning.
 
 on:
   schedule:
@@ -23,31 +28,54 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # Nine sites are eight gaps of four minutes (32 minutes), plus room for slow requests.
+    timeout-minutes: 45
     env:
       DEPLOY_HOOK_ERGODESK: ${{ secrets.DEPLOY_HOOK_ERGODESK }}
       DEPLOY_HOOK_ERGOCHAIRS: ${{ secrets.DEPLOY_HOOK_ERGOCHAIRS }}
       DEPLOY_HOOK_ERGOTREAD: ${{ secrets.DEPLOY_HOOK_ERGOTREAD }}
       DEPLOY_HOOK_ERGOPLAY: ${{ secrets.DEPLOY_HOOK_ERGOPLAY }}
       DEPLOY_HOOK_ERGOMOUNT: ${{ secrets.DEPLOY_HOOK_ERGOMOUNT }}
+      DEPLOY_HOOK_ERGOCYCLE: ${{ secrets.DEPLOY_HOOK_ERGOCYCLE }}
+      DEPLOY_HOOK_ERGOBENCH: ${{ secrets.DEPLOY_HOOK_ERGOBENCH }}
+      DEPLOY_HOOK_ERGORECLINE: ${{ secrets.DEPLOY_HOOK_ERGORECLINE }}
+      DEPLOY_HOOK_ERGOCLICK: ${{ secrets.DEPLOY_HOOK_ERGOCLICK }}
     steps:
-      - name: Trigger each site, five minutes apart
+      - name: Trigger each site, four minutes apart
         run: |
           failed=0
           first=1
-          for site in ERGODESK ERGOCHAIRS ERGOTREAD ERGOPLAY ERGOMOUNT; do
+          skipped=()
+          report() { echo "| $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"; }
+          printf '| Site | Result |\n| --- | --- |\n' >> "$GITHUB_STEP_SUMMARY"
+          for site in ERGODESK ERGOCHAIRS ERGOTREAD ERGOPLAY ERGOMOUNT ERGOCYCLE ERGOBENCH ERGORECLINE ERGOCLICK; do
             hook_var="DEPLOY_HOOK_${site}"
             hook="${!hook_var}"
             if [ -z "$hook" ]; then
-              echo "Skipping $site (no deploy hook secret set)"
+              echo "::warning title=${site} skipped::No ${hook_var} secret is set, so ${site} was not refreshed."
+              report "$site" "SKIPPED: no hook saved"
+              skipped+=("$site")
               continue
             fi
-            if [ "$first" -eq 0 ]; then sleep 300; fi
+            # Never print the value. A bare URL has no spaces and starts with https://.
+            if [[ ! "$hook" =~ ^https://[^[:space:]]+$ ]]; then
+              echo "::error title=${site} hook is not a URL::${hook_var} must hold only the hook URL. Save it again."
+              report "$site" "FAILED: saved value is not a bare https URL"
+              failed=1
+              continue
+            fi
+            if [ "$first" -eq 0 ]; then sleep 240; fi
             first=0
             echo "Triggering $site"
-            if ! curl --fail --silent --show-error -X POST "$hook" > /dev/null; then
-              echo "::error::Deploy hook for $site failed"
+            if curl --fail --silent --show-error --max-time 60 -X POST --url "$hook" > /dev/null; then
+              report "$site" "triggered"
+            else
+              echo "::error title=${site} hook failed::The deploy hook for ${site} did not accept the request."
+              report "$site" "FAILED: hook request"
               failed=1
             fi
           done
+          if [ "${#skipped[@]}" -gt 0 ]; then
+            echo "::warning title=${#skipped[@]} sites not refreshed::Skipped: ${skipped[*]}"
+          fi
           exit $failed
